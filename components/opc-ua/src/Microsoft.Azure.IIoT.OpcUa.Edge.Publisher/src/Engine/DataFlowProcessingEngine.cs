@@ -1,4 +1,4 @@
-﻿// ------------------------------------------------------------
+// ------------------------------------------------------------
 //  Copyright (c) Microsoft Corporation.  All rights reserved.
 //  Licensed under the MIT License (MIT). See License.txt in the repo root for license information.
 // ------------------------------------------------------------
@@ -19,6 +19,7 @@ namespace Microsoft.Azure.IIoT.OpcUa.Edge.Publisher.Engine {
     using System.Threading.Tasks.Dataflow;
     using Prometheus;
     using System.Text;
+    using System.Collections.Generic;
 
     /// <summary>
     /// Dataflow engine
@@ -270,6 +271,8 @@ namespace Microsoft.Azure.IIoT.OpcUa.Edge.Publisher.Engine {
         /// <param name="sender"></param>
         /// <param name="args"></param>
         private void MessageTriggerMessageReceived(object sender, DataSetMessageModel args) {
+            DetectDroppedMessages(args);
+
             if (_diagnosticStart == DateTime.MinValue) {
                 _diagnosticStart = DateTime.UtcNow;
 
@@ -285,6 +288,39 @@ namespace Microsoft.Azure.IIoT.OpcUa.Edge.Publisher.Engine {
                 _batchDataSetMessageBlock.Post(args);
             }
         }
+
+        /// <summary>
+        /// Detect dropped messages for incrementally increasing integer values.
+        /// </summary>
+        /// <param name="dataSetMessageModel"></param>
+        private void DetectDroppedMessages(DataSetMessageModel dataSetMessageModel) {
+            foreach (var notification in dataSetMessageModel.Notifications) {
+                try {
+                    var nodeId = notification.NodeId.ToString();
+                    var value = int.Parse(notification.Value.Value.ToString());
+                    var timestamp = notification.PublishTime.Value;
+
+                    if (!_valueCache.ContainsKey(nodeId)) {
+                        _valueCache.Add(nodeId, Tuple.Create(value, timestamp));
+                    }
+                    else {
+                        if (value != _valueCache[nodeId].Item1 + 1) {
+                            _logger.Error($"Message dropped for {nodeId} node: " +
+                                $"{_valueCache[nodeId].Item1} {_valueCache[nodeId].Item2.ToString(_format)} ---> " +
+                                $"{value} {timestamp.ToString(_format)}");
+                        }
+
+                        _valueCache[nodeId] = Tuple.Create(value, timestamp);
+                    }
+                }
+                catch (Exception ex) {
+                    _logger.Error(ex, "Error when trying to detect dropped messages.");
+                }
+            }
+        }
+
+        private const string _format = "yyyy-MM-dd HH:mm:ss.fffffffZ";
+        private readonly Dictionary<string, Tuple<int, DateTime>> _valueCache = new Dictionary<string, Tuple<int, DateTime>>();
 
         private readonly int _dataSetMessageBufferSize = 1;
         private readonly int _networkMessageBufferSize = 1;
