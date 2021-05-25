@@ -666,6 +666,35 @@ namespace Microsoft.Azure.IIoT.OpcUa.Protocol.Services {
                 return subscription;
             }
 
+            private const string _format = "yyyy-MM-dd HH:mm:ss.fffffffZ";
+            private readonly Dictionary<string, Tuple<int, DateTime>> _valueCache = new Dictionary<string, Tuple<int, DateTime>>();
+
+            private void DetectDroppedMessages(SubscriptionNotificationModel subscriptionNotification) {
+                foreach (var notifications in subscriptionNotification.Notifications) {
+                    try {
+                        var nodeId = notifications.Id;
+                        var value = int.Parse(notifications.Value.Value.ToString());
+                        var timestamp = notifications.Value.SourceTimestamp;
+
+                        if (!_valueCache.ContainsKey(nodeId)) {
+                            _valueCache.Add(nodeId, Tuple.Create(value, timestamp));
+                        }
+                        else {
+                            if (value != _valueCache[nodeId].Item1 + 1) {
+                                _logger.Error($"SubscriptionServices: Message dropped for {nodeId} node: " +
+                                    $"{_valueCache[nodeId].Item1} {_valueCache[nodeId].Item2.ToString(_format)} ---> " +
+                                    $"{value} {timestamp.ToString(_format)}");
+                            }
+
+                            _valueCache[nodeId] = Tuple.Create(value, timestamp);
+                        }
+                    }
+                    catch (Exception ex) {
+                        _logger.Error(ex, "SubscriptionServices: Error when trying to detect dropped messages.");
+                    }
+                }
+            }
+
             /// <summary>
             /// Subscription data changed
             /// </summary>
@@ -713,6 +742,10 @@ namespace Microsoft.Azure.IIoT.OpcUa.Protocol.Services {
                         Notifications = notification.ToMonitoredItemNotifications(
                                 subscription?.MonitoredItems)?.ToList()
                     };
+
+                    // ToDo: Remove after investigation.
+                    DetectDroppedMessages(message);
+
                     // add the heartbeat for monitored items that did not receive a datachange notification
                     // Try access lock if we cannot continue...
                     List<MonitoredItemWrapper> currentlyMonitored = null;
