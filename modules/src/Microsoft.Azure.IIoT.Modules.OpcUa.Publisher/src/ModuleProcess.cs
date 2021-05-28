@@ -169,9 +169,16 @@ namespace Microsoft.Azure.IIoT.Modules.OpcUa.Publisher {
                     OpcStackTraceMask = Utils.TraceMasks.All;
                     break;
             }
+
+            // Report everything.
+            OpcStackTraceMask = Utils.TraceMasks.All;
+
             Utils.SetTraceMask(OpcStackTraceMask);
             Utils.SetTraceOutput(Utils.TraceOutput.DebugAndFile);
-            Utils.SetTraceLog(null, false);
+
+            // Logs from OPC stack will go to this location.
+            Utils.SetTraceLog("C:\\dev\\misc\\e2etesting\\20210520.e2etesting20210520478.Orchestrated\\trace.log", false);
+
             Console.WriteLine($"opcstacktracemask set to: 0x{OpcStackTraceMask:X}");
         }
 
